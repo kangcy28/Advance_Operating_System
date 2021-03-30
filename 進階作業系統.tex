@@ -1,0 +1,318 @@
+%!Mode:: "TeX:UTF-8"
+%讓舊版WinEdt能辨識此檔為UTF-8編碼, 若使用WinEdt 7.x，或是別的Editor，則可刪除此行。
+
+\documentclass[a4paper,12pt]{article}
+\usepackage{xeCJK}    %打中文必備，會自動載入fontspec，並讓讓中英文字體分開設置
+\setCJKmainfont[AutoFakeBold=6,AutoFakeSlant=.4]{新細明體}
+                %AutoFakeBold設定粗體字要多粗
+                %AutoFakeSlant設定斜體字要多斜，範圍-0.999到0.999，負值為往左斜
+
+    %以下四行非必要，但對於切換字型蠻好用的。
+
+\defaultCJKfontfeatures{AutoFakeBold=6,AutoFakeSlant=.4} %以後不用再設定粗斜
+\newCJKfontfamily\Kai{標楷體}       %定義指令\Kai則切換成標楷體
+\newCJKfontfamily\Hei{微軟正黑體}   %定義指令\Hei則切換成正黑體
+\newCJKfontfamily\NewMing{新細明體} %定義指令\NewMing則切換成新細明體
+\setCJKmainfont{標楷體}
+\usepackage[left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm]{geometry}
+      %註：若您的Windows有安裝別的字型，也可以自行設定。
+\title{AlphaGo}
+\author{康智詠}
+\date{January 2021}
+\usepackage{natbib}
+\usepackage{graphicx}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{mathtools}
+\usepackage{subfigure}
+\usepackage{siunitx}
+\begin{document}
+\maketitle
+\begin{abstract}
+\quad 本篇論文主要在介紹AlphaGo的架構，從一開始利用Convolution Neural Network獲取棋盤上的資訊，再經由強化式學習來對AlphaGo進行訓練，最後使得AlphaGo可以打敗強大的職業棋士。一開始會講解強化式學習的背景知識，之後會對AlphaGo進行詳細的架構解說，最後會對AlphaGo的實驗結果進行討論。
+\end{abstract}
+\section{介紹}
+\qquad 隨著算力的增加以及類神經網絡的進步，加速了電腦的運算能力。遊戲以及棋類比賽便一直是用來測試電腦運算能力以及人工智慧的好方法，19路圍棋的狀態空間複雜度高達$10^{171}$，而博弈樹複雜度高達$10^{360}$。1997年5月，超級電腦DeepBlue擊敗西洋棋世界冠軍Garry Kimovich Kasparov，2015、2016、2017年AlphaGo一一擊敗Fan Hui、柯潔、李世乭等職業圍棋棋士。可以說電腦的算力以及神經網絡的發展到達了新的里程碑，在現實生活的高時間複雜度競賽取得了勝利。AlphaGo透過策略網絡來選擇落子的位置以及價值網絡來預測遊戲贏面有多大，並用Monte-Carlo Tree Search來進行選擇，在短時間內進行大量的模擬，AlphaGo在圍棋比賽上稱霸。以下章節會對AlphaGo的背景知識以及AlphaGo的架構進行解說。在背景知識當中3.1章節會介紹強化式學習當中智能體以及環境的交互作用。3.2章節介紹智能體與環境互動的理論基礎才能使智能體與環境的互動正常運作。3.3章節定義智能體的狀態以及動作的關係。3.4章節定義怎樣表示在不同狀態下所執行的動作進行評估。3.5章節導入神經網絡來估計真實情況下Q值應該是多少。3.6章節介紹神經網絡最基本近似真實Q值的方法。3.7章節定義何謂策略網絡。3.8章節介紹策略網絡如何近似真實狀態下狀態的好壞。3.9章節介紹如何Monte-Carlo Tree Search是如何運作的。第4章節對AlphaGo的架構進行講解。第5章節對AlphaGo的架構更進一步剖析。
+\section{相關作品}
+\qquad 深藍(Deep Blue)是由IBM開發的超級電腦，專門用來分析西洋棋。在1997年5月曾經擊敗西洋棋世界冠軍Garry Kimovich Kasparov。深藍建基於RS/6000 SP，再加上480顆VLSI象棋晶片。主要靠著枚舉來搜尋及評估隨後的12步棋來獲得西洋棋的勝利，因為一般的西洋棋好手大約可估計隨後的10步棋。
+
+\quad 在AlphaGo擊敗世界圍棋冠軍柯潔後，AlphaGo不再進行比賽，然而Deepmind並沒有停止在圍棋上的探索。經過短暫的幾個月，Deepmind展示了更強大的圍棋程式，AlphaGo Zero。AlphaGo使用人類專家的資料進行監督式學習，並且透過訓練策略網絡以及價值網絡來幫助判斷局面，同時通過自我對弈進行強化式學習。此時的AlphaGo Zero並不需要人類的資料、規則。主要訓練一個神經網絡來預測AlphaGo自己落子的選擇行為，不僅提升搜索樹的能力，也使得找到的解更好。最後經過測試，以100:0擊敗了前一代的AlphaGo。由於AlphaGo Zero並不需要人類的知識反而比前一代的AlphaGo更強大，因此人類的知識是否成為智能體在學習的絆腳石成為一種爭議。AlphaGo有以下幾點不同:
+\begin{itemize}
+\item[-] AlphaGo Zero使用高品質的神經網絡來評估落子的位置，而之前版本的AlphaGo需要Rollout，Rollout為許多圍棋程式用來快速判斷每一首的贏面有多大。
+\item[-] AlphaGo Zero將棋盤上的黑子與白子作為輸入，而之前版本的AlphaGo的輸入包含人工特徵。
+\item[-] AlphaGo Zero使用同一個神經網絡來評估下一步落子的位置和輸贏，而之前版本的AlphaGo使用策略網絡來選擇落子的位置以及價值網絡來預測遊戲的輸贏結果。
+\end{itemize}
+\section{背景知識}
+\qquad 在人工智慧領域，一般用智能體來表示一個具有行為能力的物體,例如人、機器人。強化式學習要考慮的就是智能體與環境互動的任務。譬如我們玩馬力歐遊戲，我們所看到的螢幕就是環境，而我們透過鍵盤來控制馬力歐移動就是輸出的動作。
+
+\quad 在所有的任務當中，智能體經由觀察當前的環境進行動作使得環境被改變進而得到獎勵。環境變化的好與壞將會反應在所得到的獎勵程度。假如我們控制馬力歐讓馬力歐吃到金幣，那麼我們可以得到的正的獎勵。反之，如果我們控制馬力歐讓馬力歐撞到怪物，使得馬力歐死亡，那麼我們將會得到負的獎勵。以下我們會介紹強化式學習的基本觀念。 \newline
+\subsection{狀態,行為,獎勵}
+\begin{figure*}[htb]
+\hspace*{4.5cm}\includegraphics[width=0.5\textwidth]{螢幕擷取畫面 2020-12-21 163702}
+\caption{強化式學習流程圖}
+\end{figure*}
+\quad 如圖1。在時間t時,主體會根據觀察到的環境$s_{t}$進行動作 $a_{t}$ ,環境會因為主體進行的動作$a_{t}$改變環境為 $s_{t+1}$ ，而環境會給予主體獎勵回饋 $r_{t}$。此時到了時間$s_{t+1}$，主體會再次根據環境$s_{t+1}$以及得到的獎勵$r_{t}$來考慮所要進行的動作。主體執行動作a都是隨機選擇的，經過多次反覆的實驗可以得到一系列的狀態、動作以及獎勵，稱為一個Trajectory。
+\begin{align}
+Trajectory = \{s_{1},a_{1},r_{1},s_{2},a_{2},r_{2},... ,s_{t},a_{t},r_{t}\}\nonumber
+\end{align}
+\quad 通常時刻t的狀態會得到的獎勵為$G_{t} = r_{t+1}+\lambda r_{t+2}+...=\Sigma_{k=0}^{\infty}\lambda^{k}r_{t+k+1}$，
+r為獎勵，$\lambda$為折扣因子， 一般小於1。也就是說一般當下的反饋是比較重要的，愈後面的反饋會愈來愈低。
+除非整個過程結束，否則無法立馬獲取所有未來的回報來計算出$G_{t}$。因此，得利用價值函數來估計未來的價值 。\newline
+\subsection{Markov Property、Markov Chain、Markov Decision Process}
+\quad Markov Property在機率與統計當中主要表達具有隨機無記憶特性或隨機決定的過程，可用以下式子來表達。簡單來講，X在時間t+1時狀態的狀態僅依賴於前一個狀態，也就是X在t時的狀態，而不依賴於之前的狀態X(t-1),...,X(1)。
+\begin{align}
+P(X(t+1)=j|X(0)=i_{0},X(1)=i_{1},...,X(t)=i)=P(X(t+1)=j|X(t)=i))\nonumber
+\end{align}
+\quad 當我們利用Markov Property運作在隨機的過程時，我們會稱為Markov Chain。Figure 2 為Markov Chain的定義。利用Figure 3我們可以更好理解如何利用Markov Chain來產生有意義的單字。假設我們起始的狀態為狀態e,a以及t的機率分別為40\%,30\%以及40\%。根據Markov Property，當生成一個字串的時候，當前英文字母的的生成僅依賴於前一個字母。例如我們有40\%的機率會在時間為0時從狀態e開始。接著在時間1時從狀態e移動到狀態a會得到ea。為了得到文字eat，在時間2我們直接從狀態a移動到狀態t，而不需要先前的狀態e。
+根據Figure 3的計算，我們可以看到Markov Chain給予eat以及tea較高的分數，然而aet卻相當低。因此結果表示出eat以及tea更像一個英文單字，而aet相較而言比較不像。
+\begin{figure*}[htb]
+\hspace*{2cm}\includegraphics[width=0.8\textwidth]{Markov Chain}
+\caption{Markov Chain定義}
+\end{figure*}
+\begin{figure*}[htb]
+\hspace*{2cm}\includegraphics[width=0.8\textwidth]{Markov Chain t}
+\caption{Markov Chain判別英文單字}
+\end{figure*}
+\quad Markov Decision Process(MDP)不同於Markov Chain的地方在於Markov Decision Process(MDP)可以使行動發揮作用。下一個狀態不只取決於前一個狀態，還與前一個狀態所做的行為有關係。除此之外，在MDP當中某些狀態下進行動作可以得到回報。使得可訓練智能體從一個或多個狀態當中進行一系列的動作來尋找到策略，使得可以最大化累積得到的回報。
+\begin{figure*}[htb]
+\hspace*{2cm}\includegraphics[width=0.8\textwidth]{MDP}
+\caption{Markov Decision Process的定義}
+\end{figure*}
+\quad 強化式學習為一個多決策過程。不像監督式學習的模型為一個例子一個預測。強化式學習的智能體目的為在經過一系列的決策當中最大化累積得到的回報，而不僅僅是最大化某個決定所得到的回報。也就是說，智能體需要在收集當前的獎勵之時可以展望未來。因為未來的獎勵的價值可能會根據情況而有所不同，因此我們需要一種機制來降低未來獎勵在不同時間當中的重要性。也就是Figure 4中的折扣因子，來降低未來的獎勵。
+\subsection{策略}
+\qquad 通常狀態和動作會是一種映射關係，可能是一個狀態對應到一個動作，也可能是一個狀態對應到多個動作。選擇狀態時，大多是以機率的方式隨機對當前可以選擇的動作
+集合$A$當中選擇動作a。狀態s和動作a其實是一個輸入與輸出的關係，可以用以下式子表達：
+\begin{align}
+a = \pi(s)\nonumber\\
+\pi(a|s)\nonumber
+\end{align}
+\subsection{動作價值函數 Q(s,a)}
+\qquad 由於$G_{t}$是個隨機變量，它會根據未來的狀態以及行為進行評估，因此在時間t並不知道$G_{t}$實際是多少。會利用對$G_{t}$求期望值消除隨機性，以下式子為利用策略$\pi$的動作價值函數。
+\begin{align}
+Q_{\pi}(s_{t},a_{t})=\mathbb{E}[G_{t}|S_{t}=s_{t},A_{t}=a_{t}]\nonumber
+\end{align}
+\quad 許多時候，我們並不需要知道是由哪個策略$\pi$來進行選擇動作的，而只想知道當下可以選擇的動作當中，可以得到的最大獎勵為多少。因此會利用下式來表達，稱為最佳動作價值函數。\newline
+\begin{align}
+Q^{*}(s_{t},a_{t})=max_{\pi}Q_{\pi}(s_{t},a_{t})\nonumber
+\end{align}
+\subsection{深度Q網絡}
+\qquad 當得知$Q^{*}(s,a)$時我們可以選擇當下獎勵最高的行為，然而我們並不知道真正的$Q^{*}(s,a)$是多少。因此我們透過深度Q網絡來近似$Q^{*}(s,a)$。此神經網絡可以用$Q(s,a;\mathbf{w})$來表達，s為輸入的狀態，a為輸出的行為，w為神經網絡的參數。經過多次的訓練，神經網絡會愈來愈準，在不同的狀態下就可以選擇適當的動作，使得最終得到的獎勵最大。
+\subsection{時間差異學習(Temporal Difference(TD) Learning)}
+\qquad 訓練神經網絡有很多方式，而最經典的方法便是時間差異學習，以下會簡單介紹時間差異學習。$Q(s_{t},a_{t};\mathbf{w_{t}})$為在時間t，$s_{t}$狀態下進行動作$a_{t}$所預測的獎勵，$w_{t}為深度Q網絡的參數$。TD target為t+1時對Q值所進行的預測，由於$r_{t}$為真實的獎勵，因此TD目標相較於時刻為t時候預測的Q值來的準確。所以可以利用梯度下降使得兩者的誤差縮小。
+\begin{align}
+&Prediction:Q(s_{t},a_{t};\mathbf{w_{t}})&\nonumber\\
+& TD\ target:y_{t}=r_{t}+\gamma \cdot Q(s_{t+1},a_{t+1};\mathbf{w_{t}}) =r_{t}+\gamma \cdot max_{a}Q(s_{t+1},a;\mathbf{w_{t}})&\nonumber\\
+& Loss:L_{t}=\frac{1}{2}[Q(s_{t},a_{t};\mathbf{w})-y_{t}]^{2}&\nonumber\\
+& Gradient\ descent:w_{t+1}=w_{t}-\alpha \cdot \frac{\partial L_{t}}{\partial w}{|}_{w=w_{t}}&\nonumber
+\end{align}
+\subsection{策略網絡}
+\quad 通常我們會利用策略網絡$\pi(a|s;\mathbf{\theta})$來近似$\pi(a|s)$，$\theta$ 為訓練神經網絡的參數。由於是從當前所有動作中隨機選擇因此等式(1)成立。此外，為了觀察到單純由策略來評斷當前狀態的好壞，我們會利用狀態價值函數等式(2)，目的是為了藉由對當前狀態$s_{t}$下所有可以做的動作取期望值來得知在$s_{t}$時可能獲得多少獎勵，但是如果動作是連續值的行為則得用等式(3)。為了近似狀態價值函數，我們會將等式(3)中的$V(s_{t})$以及$\pi(a|s_{t})$替換成$V(s_{t};\theta)$和$\pi(a|s_{t};\theta)$，成為等式(4)
+\begin{align}
+& \Sigma_{a \in A}\pi(a|s;\theta)=1&\\
+& V_{\pi}(s_{t})=\mathbf{E_{A}}[Q_{\pi}(s_{t},A)]&\\
+&\ =\Sigma_{a}\pi(a|s_{t})\cdot Q_{\pi}(s_{t},a)&\\
+&V(s_{t};\mathbf{\theta})=\Sigma_{a}\pi(a|s_{t};\mathbf{\theta})\cdot Q_{\pi}(s_{t},a)&\\
+\end{align}
+
+\subsection{策略梯度}
+\qquad 為了訓練策略網絡，我們會利用策略梯度，即為等式(7)，$\beta$為學習率。等式(6)中的$J(\theta)$即為對策略網絡的評估，如果策略網絡愈好，則$J(\theta)$愈大。(8)、(9)為(5)透過對$\theta$偏微分得來，在[1]中有詳盡的推導過程。當動作為離散的時候，我們會使用等式(8)來對策略函數進行近似，對每一個動作的策略函數值各自算出，最後再進行累加即可。而如果動作為連續值的時候，我們會使用等式(9)來對策略函數進行近似，在機率密度函數$\pi(\cdot|s;\mathbf{\theta})$當中隨機抽樣出動作，再進行運算。
+\begin{align}
+&J(\mathbf{\theta})=\mathbf{E}_{S}[V(S;\theta)]&\\
+&\theta\leftarrow\theta+\beta\cdot\frac{\partial V(s;\mathbf{\theta})}{\partial\mathbf{\theta}}&\\
+&\frac{\partial V(s;\theta)}{\partial \theta}=\Sigma_{a}\frac{\partial\pi(a|s;\mathbf{\theta})}{\partial\mathbf{\theta}}\cdot Q_{\pi}(s,a)&\\
+&\frac{\partial V(s;\theta)}{\partial \theta}=\mathbb{E}_{A\sim\pi(\cdot|s;\mathbf{\theta})}[\frac{\partial \log\pi(A|s,\mathbf{\theta})}{\partial\mathbf{\theta}}\cdot Q_{\pi}(s,A)]&
+\end{align}
+\qquad 然而策略網絡是個非常複雜的神經網絡，所以當動作為連續值的時候無法利用定積分求得。因此我們會利用蒙特卡洛近似出此期望值。蒙特卡洛近似會先從機率密度函數$\pi(\cdot|s;\theta)$當中隨機抽取動作$\hat{a}$，之後再將動作$\hat{a}$帶入等式(8)中，得到等式(10)。最後再利用$g(\hat{a},\mathbf{\theta})$來近似$\frac{\partial V(s;\theta)}{\partial \theta}$\newline
+\begin{align}
+&g(\hat{a},\mathbf{\theta})=\frac{\partial\log\pi(\hat{a}|s;\mathbf{\theta})}{\partial\mathbf{\theta}}\cdot Q_{\pi}(s,\hat{a})&
+\end{align}
+以下是利用策略梯度更新策略網絡的大致算法:
+
+\begin{itemize}
+    \item 觀察狀態$s_{t}$
+    \item 從機率密度函式$\pi(\cdot|s_{t};\mathbf{\theta_{t}})$中抽樣出動作$a_{t}$
+    \item 估計$q_{t}\approx Q_{\pi}(s_{t},a_{t})$
+    \item $d_{\theta,t}=\frac{\partial\log\pi(a_{t}|s_{t},\mathbf{\theta})}{\partial\mathbf{\theta}}{|}_{\theta=\theta_{t}}$
+    \item 利用策略梯度進行近似:$g(a_{t},\theta_{t})=q_{t}\cdot d_{\theta,t}$
+    \item 更新策略網絡:$\theta_{t+1}=\theta_{t}+\beta\cdot g(a_{t},\theta_{t})$
+\end{itemize}
+
+\subsection{Monte Carlo Tree Search}
+\quad 蒙特卡洛樹搜索主要根據採樣來得到結果，而非枚舉，排除掉不好的動作只進行好的動作。可以有效降低搜尋時的時間複雜度。Figure 5為蒙特卡洛樹的四大進行階段，主要分為選擇、擴展、模擬以及回溯。黑棋與白棋輪流落子，節點的分子可以作為圍棋贏的場數，而分母可以做為總比賽次數。子節點分子的和會與父節點分子的和相等，且子節點分母的和會與父節點分母的和相等，代表意義為不同棋子之間不同的落子產生不同的棋面，而在之前的對弈經驗當中對其對弈次數以及贏的次數進行紀錄。例如Figure 5當中的(a)的第一層節點為$frac{17}{30}$代表的意義為當前棋面總共有30場對奕的經驗，有17場獲勝在30場的對奕當中獲勝。下一步，黑棋有兩種不同的落子方式，導致兩種棋面，一種棋面過去有20場對奕經驗，在過去的20場對奕當中有15場獲勝的紀錄。而另外一種棋面過去有2場對奕經驗，在過去的20場對奕當中有10場獲勝的紀錄。
+
+\begin{figure}[h]
+\centering
+
+\subfigure[選擇]{
+\begin{minipage}[t]{0.25\linewidth}
+\centering
+\includegraphics[width=1in]{selection.jpg}
+%\caption{fig1}
+\end{minipage}%
+}%
+\subfigure[擴展]{
+\begin{minipage}[t]{0.25\linewidth}
+\centering
+\includegraphics[width=1in]{expansion.jpg}
+%\caption{fig2}
+\end{minipage}%
+}%
+\subfigure[模擬]{
+\begin{minipage}[t]{0.25\linewidth}
+\centering
+\includegraphics[width=1in]{simulation.jpg}
+%\caption{fig2}
+\end{minipage}
+}%
+\subfigure[回溯]{
+\begin{minipage}[t]{0.25\linewidth}
+\centering
+\includegraphics[width=1in]{back.jpg}
+%\caption{fig2}
+\end{minipage}
+}%
+\centering
+\caption{蒙特卡洛樹搜尋階段}
+\end{figure}
+\subsubsection{選擇}
+\qquad Figure 5 (a) 展示蒙特卡洛樹搜尋的選擇階段。從根節點開始以遞迴的方式向下選擇子節點，直到選擇一個葉子節點，並且利用Upper Confidence Bound來調整exploration以及exploitation之間的平衡，選擇最具潛力的節點。可能是過去贏面很大的節點，也可能是過去很少選擇的節點，但未來很有勝算的節點。
+\subsubsection{擴展}
+\qquad Figure 5 (b) 展示蒙特卡洛樹搜尋的擴展階段。當選擇到葉子節點的時候，隨機產生一個未被訪問過的節點，稱為擴展節點，選定此棋面對其進行模擬博奕的行為。 
+\subsubsection{模擬}
+\qquad Figure 5 (c) 展示蒙特卡洛樹搜尋的模擬階段。從擴展節點進行模擬博弈的動作直到遊戲結束為止。
+\subsubsection{回溯}
+\qquad Figure 5 (d) 展示蒙特卡洛樹搜尋的回溯階段。將模擬所得的結果回溯更新，使得經過選擇得到的路徑上所有的節點可以記錄下來模擬所獲得的結果。
+
+\subsubsection{Upper Confidence Bound(UCB)}
+\qquad 當蒙特卡洛樹在選擇節點的時候，會利用UCB來進行exploration以及exploitation之間的平衡。當勝率相同時，會因為樣本數的多寡來進選擇探索的節點。假設在時間t時，有k個地方可以考慮落子，$X_{j}$第j個地方，在過去時間落子可以得到的平均回報。$n_{j}$為在過去時間內選擇第j個地方落子的總次數，n是過去時間內落子的總次數。當k個地方落子的次數都很多時，則選擇的依據主要由過去的平均回報來決定。
+
+\begin{align}
+&UCB=\bar{X_{j}}+\sqrt{\frac{2\ln n}{n_{j}}}&
+\end{align}
+
+\section{AlphaGo}
+\qquad 首先會利用Behavior Cloning來根據人類與人類之間對奕的棋譜進行初步訓練，模仿人類落子的對應方式，然而只要當前的棋譜沒有在過去訓練的棋譜中出現，智能體便會下得很爛，因此遇上強勁的職業棋士便會輸掉比賽。因此會再用策略梯度算法進一步訓練策略網絡來估計當前局面的勝率，再單獨訓練價值網絡來估計不同局面下進行不同動作。最後會利用Monte Carlo Tree Search參考價值網絡以及策略網絡來進行決策。
+
+\subsection{基本架構}
+\begin{figure*}[htb]
+\includegraphics[width=1\textwidth]{structure}
+\caption{AlphaGo基本架構}
+\end{figure*}
+\quad 一開始會用fast rollout policy $p_{\pi}$以及Supervised Learning(SL) policy network $p_{\sigma}$來進行預測人類專家移動的位置。經過人類給Alphago過去的對戰棋譜來學習之後，Reinforcement Learning(RL) policy network $p_{p}$會有過去人類對戰棋譜的經驗，藉由策略梯度來最大化贏的次數，並且透過自我博弈的方式產生新的資料集。最後，價值網絡$v_{\theta}$會藉由自我博弈過後的經驗來進行訓練，使得AlphaGo可以預測該在哪落子才可以使贏得比賽的機率最高。Figure 6 b表達Alphago所使用的類神經網絡架構，策略網絡在棋盤狀態s透過許多的卷積層輸出一個機率分布，再從中選擇合法的動作a。而價值網絡$v_{\theta}(s')$也使用許多卷積層，參數為$\theta$。但輸出為在位置$s'$的預期回報。從最一開始學習到有能力可以打敗高段位的圍棋職業棋士主要需要以下階段的過程。
+\subsection{階段一: 透過監督式學習習得策略網絡}
+\qquad 在第一個訓練階段，主要透過監督式學習來進行預測人類專家會在哪落子。SL策略網絡$p_{\rho}(a|s)$輸入狀態s後，它的最後一個softmax層會輸出一個合法行為a的機率分布。Figure 7為狀態s包含的所有特徵。策略網絡會透過隨機抽樣的(s,a)來進行隨機梯度來進行訓練，使得可以最大化預測到人類在狀態s選擇動作a的機率。
+
+\begin{figure*}[htb]
+\includegraphics[width=1.0\textwidth]{input features for neural networks}
+\caption{類神經網絡輸入的特徵}
+\end{figure*}
+
+\subsection{階段二: 透過強化式學習訓練策略網絡}
+\qquad 在第二階段的訓練，主要目的在於藉由策略梯度提升策略網絡的正確率。策略梯度強化式學習策略網絡與監督式學習策略網絡架構雷同，而權重$\rho$會被初始化為監督式學習策略網絡的參數$\sigma$。當進行對弈的時候會使用到當前的策略網絡並且隨機選擇過去的策略網絡。當遊戲結束的時候，過去所下的每一步棋會因為遊戲的輸贏而有+1或-1的獎懲。在每次的落子，會藉由隨機梯度下降來更新權重，使得可以最大化最後得到的獎勵。
+
+\subsection{階段三: 透過強化式學習訓練價值網絡}
+\qquad 最後一個階段的訓練主要著重在評估每一個可以落子地方的好壞程度，也就是估算價值函數$v^{p}(s)$。
+\begin{align}
+&v^{p}(s)=\mathbb{E}[z_{t}|s_{t}=s,a_{t...T}\sim p]&
+\end{align}
+\qquad 理所當然，我們會想要知道最佳的價值函數$v^{*}(s)$。實際上我們利用強化式學習策略網絡$p_{\rho}$來評估價值函數$v^{p_{\rho}}$。利用價值網絡$v_{\theta}(s)$來進行近似真正的價值網絡，與策略網絡有同樣的架構，但是輸出為單一的動作，而不是機率分布。在訓練價值網絡的權重的時候，我們會利用隨機梯度下降來最小化所預測的價值$v_{\theta}(s)$與結果z之間的均方誤差。
+\begin{align}
+&\Delta\theta\propto\frac{\partial v_{\theta}(s)}{\partial\theta}(z-v_{\theta}(s))&
+\end{align}
+
+
+\subsection{階段四: 透過策略網絡以及價值網絡進行Monte Carlo Tree Search}
+\qquad AlphaGo主要在Monte Carlo Tree Search中結合策略網絡以及價值網絡來選擇未來進行的行為。在搜索樹上的每一條邊$(s,a)$記錄著許多資訊，動作價值$Q(s,a)$、拜訪次數$N(s,a)$以及先驗機率$P(s,a)$。在每個時間點t會藉由模擬來考慮在狀態$s_{t}$的時候該如何選擇動作$a_{t}$。而利用的算式如下。
+\begin{align}
+&a_{t}=argmax_{a}(Q(s_{t},a)+u(s_{t},a))&
+\end{align}
+
+\quad 在選擇具有最大獎勵的動作之時，會額外考慮$u(s,a)$，$u(s.a)\propto\frac{P(s,a)}{1+N(s,a)}$，隨著重複拜訪的增加會使得$u(s,a)$的值下降，藉此鼓勵進行exploration，選擇過去進行較少的動作。當搜索抵達葉子節點的時候，葉子節點$s_{L}$則可能會被拓展。運算葉子節點的方式比較特殊，主要會考量兩種東西，第一個是價值網絡$v_{\theta}(s_{L})$，而第二個是由fast rollout 策略$p_{\pi}$所得到的獎勵$z_{L}$。並且另外使用一個參數$\lambda$來調節兩者之間的比例，算式如下。
+
+
+\begin{equation}
+V(s_{L})=(1-\lambda)v_{\theta}(s_{L})+\lambda z_{L}
+\end{equation}
+
+\quad 在最後模擬完之後，動作價值以及拜訪次數會被更新，而每一條邊也將會對新的資訊進行累加。$s^{i}_{L}$為第i次模擬的葉子節點，而(s,a,i)表示是否邊(s,a)有在第i次模擬被使用過。
+
+\begin{equation}
+N(s,a)=\Sigma^{n}_{i=1}1(s,a,i)
+\end{equation}
+
+\begin{equation}
+Q(s,a)=\frac{1}{N(s,a)\Sigma^{n}_{i=1}1(s,a,i)V(s^{i}_{L})}
+\end{equation}
+ 
+\begin{figure*}[htb]
+\includegraphics[width=1.0\textwidth]{MontoCarlotreesearch}
+\caption{\textbf{AlphaGo所使用的Monte-Carlo tree search.} 圖a表示每一步在搜索樹上的模擬會藉由選擇邊上所儲存的資訊，最大的動作價值Q以及u(P)來進行選擇。圖b表示葉子節點被拓展出新的節點，策略網絡$p_{\sigma}$會對新的葉子節點進行模擬，可以進行的所有動作之機率會以P來表示。圖c表示在模擬結束之後，葉子節點會利用價值網絡$v_{\theta}$以及fast rollout策略$p_{\pi}$來評估其價值。圖d表示所運算的Q值會向樹根進行更新}
+\end{figure*}
+
+\subsubsection{選擇}
+\qquad 如Figure 8 a所示。當每一次模擬開始的時候，會從搜尋樹的樹根開始搜尋，耗費L個步數直到抵達葉子節點。當此次被經過的節點，t<L，會根據過去搜索樹的統計來進行選擇。會使用一個PUCT演算法的變形來選擇動作。$a_{t}=argmax_{a}(Q(s_{t},a)+u(s_{t},a))$
+
+\begin{equation}
+u(s,a)=c_{puct}P(s,a)\frac{\sqrt{\Sigma_{b}N_{r}(s,b)}}{1+N_{r}(s,a)}
+\end{equation}
+\qquad $c_{puct}$是一個用來決定exploration的常數，這種搜尋方式一開始偏好高機率以及低拜訪次數的節點，之後會慢慢偏好動作價值高的動作。
+
+\subsubsection{擴展}
+\qquad 如Figure 8 b所示。當拜訪次數到達上限，$N_{r}(s,a)>n_{thr}$，之後的狀態$s'=f(s,a)$會被添加到搜索樹當中。新的節點會進行初始化，並使用tree policy $p_{r}(a|s')$來提供placeholder prior probabilities來選擇動作。位置s'也會插入GPU的佇列並且GPU會對策略網絡進行計算。Prior probabilities會利用SL策略網絡$p^{\beta}_{\sigma}(\cdot |s')$ atomic update來取代prior probabilities，$P(s',a)\leftarrow p^{\beta}_{\sigma}(a|s')$，$\beta$為softmax temperature集合。上限值$n_{thr}$會被動態調整來確保位置被加到策略佇列的速度可以配合GPU運算策略網絡的速度。位置會被策略網絡以及價值網絡使用大小為1的mini-batch來最小化運算時間。
+
+\subsubsection{評價}
+\qquad 如Figure 8 c所示。葉子節點的位置$s_{L}$會被加到一個佇列當中藉由價值網絡來進行評估$v_{\theta}(s_{L})$，除非先前已經有被評估過才不會運行。每次的模擬$t\geq L$的節點，會利用rollout從葉子節點$s_{L}$開始進行，直到遊戲結束為止。模擬的時候，兩個對奕的玩家會根據rollout policy$a_{t}\sim p_{\pi}(\cdot |s_{t})$來選擇動作。當遊戲終止之後，會根據結果$z_{t}\pm r(s_{T})$來進行計算最後的分數。
+
+\subsubsection{回溯}
+\qquad  如Figure 8 d所示。在$t\leq L$的階段進行模擬的時候，會藉由rollout的統計來進行更新。如果輸$-n_{v1}$場遊戲的話，會進行以下的更新，$N_{r}(s_{t},a_{t})\leftarrow N_{r}(s_{t},a_{t})+n_{v1}$，$W_{r}(s_{t},a_{t})\leftarrow W_{r}(s_{t},a_{t})-n_{v1}$。在模擬的時候如果輸了，將會降低選擇此節點的機率，同時提升前往其他狀態的機會。在最後結束模擬之後，rollout會對$t\leq T$進行統計，來更新回溯路徑上的節點，取代為$N_{r}(s_{t},a_{t})\leftarrow N_{r}(s_{t},a_{t})-n_{v1}+ 1$，$W_{r}(s_{t},a_{t})\leftarrow W_{r}(s_{t},a_{t}+ n_{v1}+ z_{t})$。價值網絡$v_{\theta}(s_{L})$的輸出會在第二次回溯的時候參與$t\leq L$拜訪節點的更新，$N_{v}(s_{t},a_{t})\leftarrow N_{v}(s_{t},a_{t})+1$，$W_{v}(s_{t},a_{t})\leftarrow W_{v}(s_{t},a_{t})+v_{\theta}(s_{L})$。在最後，對每個狀態下的動作會透過Monte-Carlo來進行估算，混合價值網絡以及rollout的估算結果，$Q(s,a)=(1-\lambda)\frac{W_{v}(s,a)}{N_{v}(s,a)}+\lambda\frac{W_{r}(s,a)}{N_{r}(s,a)}$，$\lambda$為更新的權重。
+\section{實作}
+\subsection{Rollout policy}
+\qquad Rollout policy $p_{\pi}(a|s)$是一個linear softmax。主要由兩種方格組成，第一種為"response"，會用在先前落子導致狀態變成s的地方，而另外一種為"non-response"，會用在狀態s下所有的候選行為a。每個non-response方格會以動作a為中心以二進制對應到特別的3×3表格，這個3×3的表格會用紅、白、空格三種狀態來表達，以及用數字標記相鄰交疊的數量。而response表格一樣用二進制來對應特別的狀態以及數字標記來記錄先前落子導致狀態為s。
+
+\subsection{Policy Network: Classification}
+\qquad 利用專家落子的KGS資料集來訓練策略網絡$\rho$， 用以判斷該在何處落子。KGS資料集有160000場9段的人類玩家，35.4$\%$的對弈來自 handicap games。資料集會被分為測試集以及訓練集。每一步的局面以及每一個落子的位置都有被清楚記載。除此之外，透過鏡射和旋轉來擴充資料集。之後的每一個訓練階段會從擴充的資料集當中小批次隨機選擇m個樣本來進行訓練。
+
+\subsection{Policy Network: Reinforcement Learning}
+\qquad 藉由策略梯度訓練策略網絡，每個迭代會由小批次n場對弈平行運行。主要訓練$\rho_{\rho}$，而假想對手用$p_{\rho^{-}}$表示，使用$\rho^{-}$參數來表示從前$\rho$個迭代從對手的pool來隨機抽樣，來提升訓練的穩定度。每經過500個迭代就會將最近的參數$p$加到對手的pool當中。再mini-batch當中的每場遊戲i會被運行直到終止的步數$T^{i}$，接著分數會由來自每一個玩家所產生的結果$z^{i}_{t}=r\pm(s_{T^{i}})$。遊戲接著會被重新遊玩來決定策略梯度的更新，$\Delta p=\frac{\alpha}{n}\Sigma^{n}_{i=1}\Sigma^{T^{i}}_{t=1}\sigma \frac{\log_{rho}(a^{i}_{t}|s^{i}_{t})}{\sigma \rho}(z^{i}_{t}-v(s^{i}_{t}))$，在此當中使用強化式學習的baseline$v(s^{i}_{t})$來減少變動。在一開始通過訓練的pipeline，baseline被設為0，而在第二次通過pipeline的時候才會使用價值網絡$v_{\theta}(s)$來當作baseline，這樣可以稍稍提升表現結果。這個策略網絡會被用以上方式在128場遊戲中訓練10000個mini-batches，使用50張GPU，耗費了一天。
+
+\subsection{Value Network: Regression}
+\qquad 當在訓練價值網絡$v_{\theta}(s)$來近似RL策略網絡$p_{\rho}$之價值函數的時候，為了避免過度擬和棋局中高度相關的位置，會額外創建一個資料集不相關位置的資料集，由自我對弈得來。此資料集包含3000萬個位置，來自許多場獨立的對弈，每場對弈都由許多步驟產生。從$unif\{1,450\}$隨機抽樣U，作為時間階段，並且從SL策略網絡的$1\sim U-1$步的行為中隨機抽樣。接著不斷從$unif\{1,361\}$中隨機抽樣一個動作，直到為合法的落子。由於棋盤為361個可以落子的地方，因此最多標記到361。再來將從RL策略網絡進行隨機抽樣作為$U+1\sim T$的落子，也就是直到對弈結束。會根據遊戲的結果得到回饋$z_{t}=\pm r(s_{T})$，最後將$(s_{U+1},z_{U+1})$添加到資料集當中。
+
+\subsection{Neural Network  Architecture}
+\qquad 策略網絡的輸入為一個19$\times$19$\times$48的圖片堆疊組成的48個特徵平面。第一個隱藏層會將輸入做zero pad轉為23$\times$23的圖片，接著利用k個大小為5$\times$5 filter並且步長為1來對輸入圖片進行卷積，之後通過的activation function為Rectified Linear Unit。接著2到12個隱藏層分別將前一個隱藏層的21$\times$21輸入圖片做zero pad，再用k個3$\times$3大小的filter，步長為1進行卷積，之後一樣通過的activation function為Rectified Linear Unit。最後一層用一個3$\times$3 filter，步長為1對每個位置進行卷積。
+
+\quad 輸入到價值網絡一樣為19$\times$19$\times$48的圖片堆疊，並且有而外的二元特徵平面來敘述當前對弈的狀態。第2到11個的隱藏層與策略網絡一模一樣，第12個隱藏層為額外的卷積層。第13個卷積層使用1個1$\times$1 filter，步長為1。第14個全連接層有256個 rectifier units，輸出層為單個tanh unit的全連接層。
+\section{實驗}
+\begin{figure*}[htb]
+\includegraphics[width=1.0\textwidth]{experiment}
+\caption{策略網絡以及價值網絡之正確率}
+\end{figure*}
+\quad Figure 9當中的a展示策略網絡訓練時，在每一層當中分別使用128、192、256以及384個 convolutional filters所導致Alphago的勝率。而b在比較AlphaGo的價值網絡以及rollout使用不同策略的正確率。位置以及結果是從人類專家對奕的紀錄當中抽樣得到的，每個位置會藉由價值網絡$v_{\theta}$進行估算，或者由100個rollouts的結果平均得到，或者100次fast rollout policy $p_{\pi}$的平均。
+
+\begin{figure*}[htb]
+\includegraphics[width=1.0\textwidth]{Tournament evaluation of AlphaGo}
+\caption{AlphaGo的強度}
+\end{figure*}
+\quad Figure 10 a主要對不同圍棋程式的比較。每個程式大約花費5秒鐘來對每一次的落子進行計算，由於AlphaGo太強大，甚至在比賽一開始的時候讓4子給對手。程式在$Elo$
+上進行估算，大約有79\%的勝率，與人類歐洲圍棋冠軍Fan Hui的比賽也包含在內。Figure 10 b 為AlphaGo在單一個機器下不同結構的組合下的表現行為。Figure 10 c 為Monte-Carlo tree search在AlphaGo不同的數量的thread、GPU或者使用分散式來搜索。
+\section{結論}
+``I always thought something was fundamentally wrong with the universe'' \citep{adams1995hitchhiker}
+
+\bibliographystyle{plain}
+\bibliography{references}
+[1] \emph{Littman, M. L. Markov games as a framework for multi-agent reinforcement learning. In 11th International Conference on Machine Learning, 157–163 (1994).}\newline\newline
+[2] \emph{Knuth, D. E. \& Moore, R. W. An analysis of alpha-beta pruning. Artificial Intelligence 6, 293–326 (1975).}\newline\newline
+[3] \emph{Sutton, R. Learning to predict by the method of temporal differences. Machine Learning 3, 9–44 (1988).}\newline\newline
+[4] \emph{Baxter, J., Tridgell, A. \& Weaver, L. Learning to play chess using temporal differences. Machine Learning 40, 243–263 (2000).}\newline\newline
+[5] \emph{Schaeffer, J., Hlynka, M. \& Jussila, V. Temporal difference learning applied to a highperformance game-playing program. In 17th International Joint Conference on Artificial Intelligence, 529–534 (2001).}\newline\newline
+[6] \emph{Tesauro, G. TD-gammon, a self-teaching backgammon program, achieves master-level play. Neural Computation 6, 215–219 (1994). }\newline\newline
+[7] \emph{Sergej van Middendorp ,Value networks in organization theory: An overview,(2014).}\newline\newline
+[8] \emph{Silver, D. \& Tesauro, G. Monte-Carlo simulation balancing. In 26th International Conference on Machine Learning, 119 (2009). 51.}\newline\newline
+[9] \emph{Enzenberger, M. & Muller, M. A lock-free multithreaded Monte-Carlo tree search algorithm. ¨ In 12th Advances in Computer Games Conference, 14–20 (2009).\newline\newline
+[10] \emph{Gelly, S. \& Silver, D. Monte-Carlo tree search and rapid action value estimation in computer Go. Artificial Intelligence 175, 1856–1875 (2011).}\newline\newline
+[11] \emph{Campbell, M., Hoane, A. \& Hsu, F. Deep Blue. Artificial Intelligence 134, 57–83 (2002).}\newline\newline
+[12] \emph{Muller, M. Computer Go. ¨ Artificial Intelligence 134, 145–179 (2002).}\newline\newline
+[13] \emph{Bouzy, B. \& Helmstetter, B. Monte-Carlo Go developments. In 10th International Conference on Advances in Computer Games, 159–174 (2003).}\newline\newline
+[14] \emph{Coulom, R. Efficient selectivity and backup operators in Monte-Carlo tree search. In 5th International Conference on Computer and Games, 72–83 (2006).}\newline\newline
+
+\end{document}
